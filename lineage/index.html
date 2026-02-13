@@ -1,0 +1,253 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Data Lineage Explorer</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+            <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.js"></script>
+            <script src="https://cytoscape.org/cytoscape.js-dagre/cytoscape-dagre.js"></script>
+            <style>
+                body { font-family: 'Segoe UI', sans-serif; margin: 0; background-color: #f8f9fa; }
+
+                /* Homepage Styles */
+                #homepage { padding: 40px; max-width: 800px; margin: 0 auto; }
+                h1 { color: #2c3e50; text-align: center; }
+                .search-container { margin-bottom: 30px; text-align: center; }
+                #homeSearchInput { width: 100%; max-width: 500px; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 25px; outline: none; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+                #tableList { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+                .table-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; text-align: center; font-weight: bold; color: #34495e; }
+                .table-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); border-bottom: 3px solid #3498db; }
+
+                /* Graph View Styles */
+                #graphView { display: none; width: 100vw; height: 100vh; position: relative; }
+                #cy { width: 100%; height: 100%; display: block; }
+                .controls {
+                    position: absolute; top: 20px; right: 20px; z-index: 999;
+                    background: white; padding: 20px; border-radius: 8px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 280px;
+                }
+                .back-btn { position: absolute; top: 20px; left: 20px; z-index: 999; background: #34495e; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+                .back-btn:hover { background: #2c3e50; }
+
+                input.graph-search { width: 100%; padding: 8px; margin-bottom: 5px; box-sizing: border-box; }
+                .hint { font-size: 11px; color: #888; margin-bottom: 10px; font-style: italic; }
+                button.action-btn { width: 48%; padding: 8px; cursor: pointer; }
+                .legend { margin-top: 15px; font-size: 12px; color: #666; }
+                .legend-item { display: flex; align-items: center; margin-bottom: 5px; }
+                .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+                .legend-box { width: 12px; height: 12px; margin-right: 8px; border: 1px solid #ccc; }
+            </style>
+        </head>
+        <body>
+            <!-- Homepage -->
+            <div id="homepage">
+                <h1>Data Lineage Explorer</h1>
+                <div class="search-container">
+                    <input type="text" id="homeSearchInput" placeholder="Search for a table..." onkeyup="filterTables()">
+                </div>
+                <div id="tableList"></div>
+            </div>
+
+            <!-- Graph View -->
+            <div id="graphView">
+                <button class="back-btn" onclick="showHome()">← Back to List</button>
+                <div class="controls">
+                    <h3 style="margin-top:0;" id="graphTitle">Lineage</h3>
+                    <input type="text" id="graphSearchInput" class="graph-search" placeholder="Search columns...">
+                    <div class="hint">Click a column OR search above</div>
+                    <div>
+                        <button class="action-btn" onclick="performGraphSearch()" style="background:#007bff; color:white; border:none;">Find</button>
+                        <button class="action-btn" onclick="resetGraphView()" style="background:#6c757d; color:white; border:none;">Reset</button>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-item"><div class="dot" style="background:#95a5a6;"></div>Data Flow</div>
+                        <div class="legend-item"><div class="dot" style="background:#e67e22;"></div>Join Key</div>
+                        <hr style="margin: 8px 0; border: 0; border-top: 1px solid #eee;">
+                        <div class="legend-item"><div class="legend-box" style="background:#3498db;"></div>Selected Table</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#95a5a6;"></div>Upstream</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#2ecc71;"></div>Downstream</div>
+                        <div class="legend-item"><div class="legend-box" style="background:#fff; border: 2px dashed #2c3e50;"></div>CTE</div>
+                    </div>
+                </div>
+                <div id="cy"></div>
+            </div>
+
+            <script>
+                var elements = [{"data": {"id": "table_f", "label": "table_f", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_f_total_spent", "label": "total_spent", "parent": "table_f", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_f_user_id", "label": "user_id", "parent": "table_f", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_f_customer_segment", "label": "customer_segment", "parent": "table_f", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_d", "label": "table_d", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_d_order_id", "label": "order_id", "parent": "table_d", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_d_amount", "label": "amount", "parent": "table_d", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_d_status", "label": "status", "parent": "table_d", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_d_user_id", "label": "user_id", "parent": "table_d", "type": "column"}, "classes": "column_node"}, {"data": {"id": "user_stats", "label": "user_stats", "type": "table", "subtype": "cte"}, "classes": "table_node"}, {"data": {"id": "user_stats_total_spent", "label": "total_spent", "parent": "user_stats", "type": "column"}, "classes": "column_node"}, {"data": {"id": "user_stats_user_id", "label": "user_id", "parent": "user_stats", "type": "column"}, "classes": "column_node"}, {"data": {"id": "user_stats_order_count", "label": "order_count", "parent": "user_stats", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_e", "label": "table_e", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_e_order_category", "label": "order_category", "parent": "table_e", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_e_order_id", "label": "order_id", "parent": "table_e", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_e_amount_with_tax", "label": "amount_with_tax", "parent": "table_e", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_orders", "label": "raw_orders", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "raw_orders_order_id", "label": "order_id", "parent": "raw_orders", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_orders_amount", "label": "amount", "parent": "raw_orders", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_orders_status", "label": "status", "parent": "raw_orders", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_orders_user_id", "label": "user_id", "parent": "raw_orders", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_a", "label": "table_a", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_a_id", "label": "id", "parent": "table_a", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_a_email", "label": "email", "parent": "table_a", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_a_name", "label": "name", "parent": "table_a", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_users", "label": "raw_users", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "raw_users_id", "label": "id", "parent": "raw_users", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_users_email", "label": "email", "parent": "raw_users", "type": "column"}, "classes": "column_node"}, {"data": {"id": "raw_users_name", "label": "name", "parent": "raw_users", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_c", "label": "table_c", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_c_id", "label": "id", "parent": "table_c", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_c_contact_info", "label": "contact_info", "parent": "table_c", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_b", "label": "table_b", "type": "table", "subtype": "physical"}, "classes": "table_node"}, {"data": {"id": "table_b_id", "label": "id", "parent": "table_b", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_b_status", "label": "status", "parent": "table_b", "type": "column"}, "classes": "column_node"}, {"data": {"id": "table_b_name", "label": "name", "parent": "table_b", "type": "column"}, "classes": "column_node"}, {"data": {"id": "active_users", "label": "active_users", "type": "table", "subtype": "cte"}, "classes": "table_node"}, {"data": {"id": "active_users_id", "label": "id", "parent": "active_users", "type": "column"}, "classes": "column_node"}, {"data": {"id": "active_users_name", "label": "name", "parent": "active_users", "type": "column"}, "classes": "column_node"}, {"data": {"id": "flow_0", "source": "table_d_user_id", "target": "user_stats_user_id", "edgeType": "flow"}}, {"data": {"id": "flow_1", "source": "table_d_amount", "target": "user_stats_total_spent", "edgeType": "flow"}}, {"data": {"id": "flow_2", "source": "table_d_order_id", "target": "user_stats_order_count", "edgeType": "flow"}}, {"data": {"id": "flow_3", "source": "user_stats_user_id", "target": "table_f_user_id", "edgeType": "flow"}}, {"data": {"id": "flow_4", "source": "user_stats_total_spent", "target": "table_f_total_spent", "edgeType": "flow"}}, {"data": {"id": "flow_5", "source": "user_stats_total_spent", "target": "table_f_customer_segment", "edgeType": "flow"}}, {"data": {"id": "flow_6", "source": "user_stats_total_spent", "target": "table_f_customer_segment", "edgeType": "flow"}}, {"data": {"id": "flow_7", "source": "user_stats_order_count", "target": "table_f_customer_segment", "edgeType": "flow"}}, {"data": {"id": "flow_8", "source": "table_d_order_id", "target": "table_e_order_id", "edgeType": "flow"}}, {"data": {"id": "flow_9", "source": "table_d_amount", "target": "table_e_order_category", "edgeType": "flow"}}, {"data": {"id": "flow_10", "source": "table_d_amount", "target": "table_e_order_category", "edgeType": "flow"}}, {"data": {"id": "flow_11", "source": "table_d_amount", "target": "table_e_amount_with_tax", "edgeType": "flow"}}, {"data": {"id": "flow_12", "source": "raw_orders_order_id", "target": "table_d_order_id", "edgeType": "flow"}}, {"data": {"id": "flow_13", "source": "raw_orders_amount", "target": "table_d_amount", "edgeType": "flow"}}, {"data": {"id": "flow_14", "source": "raw_orders_user_id", "target": "table_d_user_id", "edgeType": "flow"}}, {"data": {"id": "flow_15", "source": "raw_orders_status", "target": "table_d_status", "edgeType": "flow"}}, {"data": {"id": "flow_16", "source": "raw_users_id", "target": "table_a_id", "edgeType": "flow"}}, {"data": {"id": "flow_17", "source": "raw_users_name", "target": "table_a_name", "edgeType": "flow"}}, {"data": {"id": "flow_18", "source": "raw_users_email", "target": "table_a_email", "edgeType": "flow"}}, {"data": {"id": "flow_19", "source": "table_a_id", "target": "table_c_id", "edgeType": "flow"}}, {"data": {"id": "flow_20", "source": "table_a_email", "target": "table_c_contact_info", "edgeType": "flow"}}, {"data": {"id": "flow_21", "source": "table_b_status", "target": "table_c_contact_info", "edgeType": "flow"}}, {"data": {"id": "flow_22", "source": "table_b_status", "target": "table_c_contact_info", "edgeType": "flow"}}, {"data": {"id": "flow_23", "source": "table_a_id", "target": "active_users_id", "edgeType": "flow"}}, {"data": {"id": "flow_24", "source": "table_a_name", "target": "active_users_name", "edgeType": "flow"}}, {"data": {"id": "flow_25", "source": "active_users_id", "target": "table_b_id", "edgeType": "flow"}}, {"data": {"id": "flow_26", "source": "active_users_name", "target": "table_b_name", "edgeType": "flow"}}, {"data": {"id": "join_0", "source": "table_a_id", "target": "table_b_id", "edgeType": "join"}}];
+                var definedTables = ["table_a", "table_b", "table_c", "table_d", "table_e", "table_f"];
+                var cy = null;
+                var currentRoot = null;
+
+                // --- HOMEPAGE LOGIC ---
+                function renderTableList(filterText = "") {
+                    var container = document.getElementById('tableList');
+                    container.innerHTML = "";
+                    var filtered = definedTables.filter(t => t.toLowerCase().includes(filterText.toLowerCase()));
+
+                    filtered.forEach(t => {
+                        var card = document.createElement('div');
+                        card.className = 'table-card';
+                        card.innerText = t;
+                        card.onclick = () => showLineage(t);
+                        container.appendChild(card);
+                    });
+                }
+
+                function filterTables() {
+                    var input = document.getElementById('homeSearchInput');
+                    renderTableList(input.value);
+                }
+
+                function showHome() {
+                    currentRoot = null;
+                    document.getElementById('homepage').style.display = 'block';
+                    document.getElementById('graphView').style.display = 'none';
+                }
+
+                // --- GRAPH LOGIC ---
+                function initCy() {
+                    if (cy) return;
+                    cy = cytoscape({
+                        container: document.getElementById('cy'),
+                        elements: elements,
+                        style: [
+                            { selector: '.table_node', style: { 'shape': 'roundrectangle', 'background-color': '#fff', 'border-width': 2, 'border-color': '#2c3e50', 'content': 'data(label)', 'text-valign': 'top', 'text-halign': 'center', 'font-weight': 'bold', 'padding': 12, 'font-size': 14, 'color': '#2c3e50' } },
+                            { selector: 'node[subtype="cte"]', style: { 'border-style': 'dashed' } },
+                            { selector: '.column_node', style: { 'shape': 'roundrectangle', 'width': 'label', 'height': 'label', 'padding': 8, 'background-color': '#ecf0f1', 'border-width': 1, 'border-color': '#bdc3c7', 'content': 'data(label)', 'text-valign': 'center', 'text-halign': 'center', 'font-size': 12, 'color': '#34495e' } },
+                            { selector: 'edge[edgeType="flow"]', style: { 'width': 2, 'line-color': '#95a5a6', 'target-arrow-color': '#95a5a6', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier' } },
+                            { selector: 'edge[edgeType="join"]', style: { 'width': 2, 'line-color': '#e67e22', 'line-style': 'dashed', 'target-arrow-shape': 'none', 'curve-style': 'bezier' } },
+                            { selector: '.highlighted', style: { 'background-color': '#3498db', 'line-color': '#2980b9', 'target-arrow-color': '#2980b9', 'border-color': '#2980b9', 'color': '#fff' } },
+                            { selector: '.hidden', style: { 'display': 'none' } },
+
+                            // Lineage Coloring
+                            { selector: '.root-node', style: { 'background-color': '#eaf2f8', 'border-color': '#3498db', 'border-width': 4 } },
+                            { selector: '.upstream-node', style: { 'background-color': '#f2f4f4', 'border-color': '#95a5a6' } },
+                            { selector: '.downstream-node', style: { 'background-color': '#eafaf1', 'border-color': '#2ecc71' } }
+                        ],
+                        layout: { name: 'dagre', rankDir: 'LR', nodeSep: 50, rankSep: 150 }
+                    });
+
+                    // Click listener
+                    cy.on('tap', 'node', function(evt){
+                        var node = evt.target;
+                        if(node.data('type') === 'column') {
+                            focusOnNodes(cy.collection().union(node));
+                            document.getElementById('graphSearchInput').value = node.data('label');
+                        }
+                    });
+                }
+
+                function showLineage(tableName) {
+                    currentRoot = tableName;
+                    document.getElementById('homepage').style.display = 'none';
+                    document.getElementById('graphView').style.display = 'block';
+                    document.getElementById('graphTitle').innerText = "Lineage: " + tableName;
+
+                    initCy();
+
+                    // Reset view first
+                    cy.elements().removeClass('highlighted hidden root-node upstream-node downstream-node');
+
+                    // Find the table node
+                    var cleanName = tableName.replace(/\./g, "_").replace(/ /g, "_");
+                    var targetNode = cy.getElementById(cleanName);
+
+                    if (targetNode.length > 0) {
+                        // Get columns of the target table
+                        var targetColumns = targetNode.children();
+
+                        // --- UPSTREAM TRAVERSAL ---
+                        var allUpstream = cy.collection();
+                        var currentUp = targetColumns;
+                        while(currentUp.length > 0) {
+                            allUpstream = allUpstream.union(currentUp);
+                            var preds = currentUp.predecessors(); 
+                            if (preds.length === 0) break;
+                            allUpstream = allUpstream.union(preds);
+                            var sources = preds.nodes();
+                            currentUp = sources.difference(allUpstream);
+                        }
+                        var upstreamTables = allUpstream.nodes().parents();
+
+                        // --- DOWNSTREAM TRAVERSAL ---
+                        var allDownstream = cy.collection();
+                        var currentDown = targetColumns;
+                        while(currentDown.length > 0) {
+                            allDownstream = allDownstream.union(currentDown);
+                            var succs = currentDown.successors();
+                            if (succs.length === 0) break;
+                            allDownstream = allDownstream.union(succs);
+                            var targets = succs.nodes();
+                            currentDown = targets.difference(allDownstream);
+                        }
+                        var downstreamTables = allDownstream.nodes().parents();
+
+                        // --- COMBINE & SHOW ---
+                        var finalSet = targetNode
+                                        .union(allUpstream)
+                                        .union(upstreamTables)
+                                        .union(allDownstream)
+                                        .union(downstreamTables);
+
+                        cy.elements().not(finalSet).addClass('hidden');
+                        finalSet.removeClass('hidden');
+
+                        // --- APPLY STYLES ---
+                        targetNode.addClass('root-node');
+                        upstreamTables.difference(targetNode).addClass('upstream-node');
+                        downstreamTables.difference(targetNode).addClass('downstream-node');
+
+                        finalSet.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 30, rankSep: 100, fit: true, padding: 50 }).run();
+                    } else {
+                        console.warn("Table node not found: " + cleanName);
+                        cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 50, rankSep: 150 }).run();
+                        cy.fit();
+                    }
+                }
+
+                function resetGraphView() {
+                    document.getElementById('graphSearchInput').value = '';
+                    if (currentRoot) {
+                        showLineage(currentRoot);
+                    } else {
+                        cy.elements().removeClass('highlighted hidden root-node upstream-node downstream-node');
+                        cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 50, rankSep: 150 }).run();
+                        cy.fit();
+                    }
+                }
+
+                function focusOnNodes(collection) {
+                    if (collection.length === 0) return;
+                    cy.elements().removeClass('highlighted hidden');
+                    var journey = cy.collection();
+                    collection.forEach(function(node){
+                        journey = journey.union(node);
+                        journey = journey.union(node.successors());
+                        journey = journey.union(node.predecessors());
+                        journey = journey.union(node.neighborhood());
+                    });
+                    var visibleSet = journey.union(journey.parents());
+                    journey.addClass('highlighted');
+                    cy.elements().not(visibleSet).addClass('hidden');
+                    visibleSet.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 30, rankSep: 100, fit: true, padding: 50 }).run();
+                }
+
+                function performGraphSearch() {
+                    var rawInput = document.getElementById('graphSearchInput').value;
+                    if (!rawInput || !rawInput.trim()) { resetGraphView(); return; }
+                    var terms = rawInput.split(/[;,]+/).map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
+                    var matches = cy.nodes().filter(function(ele){
+                        if (ele.data('type') !== 'column') return false;
+                        if (ele.hasClass('hidden')) return false; // Only search visible
+                        var label = ele.data('label').toLowerCase();
+                        return terms.some(function(term) { return label.includes(term); });
+                    });
+                    if (matches.length > 0) focusOnNodes(matches);
+                }
+
+                // Init homepage
+                renderTableList();
+            </script>
+        </body>
+        </html>
+        

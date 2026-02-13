@@ -1,0 +1,1 @@
+SELECT order_id, amount, user_id, status FROM raw_orders

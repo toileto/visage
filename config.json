@@ -1,0 +1,4 @@
+{
+  "sql_repo_path": "./sql_repo",
+  "output_file": "./lineage/index.html"
+}
